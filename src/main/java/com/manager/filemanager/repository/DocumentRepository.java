@@ -16,4 +16,5 @@ import org.springframework.stereotype.Repository;
 @ScanConsistency(query = QueryScanConsistency.REQUEST_PLUS)
 public interface DocumentRepository extends CouchbaseRepository<Document, String> {
 
+    Page<Document> findByType(Document.Type type, Pageable pageable);
 }
