@@ -4,14 +4,17 @@ import com.manager.filemanager.config.SftpConfig;
 import com.manager.filemanager.model.Document;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -37,20 +40,40 @@ public class SftpService {
 
         Comparator<SftpClient.DirEntry> comparator1 = Comparator.comparing(dirEntry -> dirEntry.getAttributes().isDirectory());
 
-        String[] pathSegments = Arrays.stream(path.split(String.valueOf(File.separatorChar)))
-                .filter(s -> !s.isBlank())
-                .toArray(String[]::new);
-
         return listFile(path, false)
                 //.sorted(comparator1.thenComparing(SftpClient.DirEntry::getFilename))
                 .map(dirEntry -> {
+                    var attributes = Optional.ofNullable(dirEntry.getAttributes());
+
                     var fileName = dirEntry.getFilename();
-                    var newPathSegments = Arrays.copyOf(pathSegments, pathSegments.length + 1);
-                    newPathSegments[newPathSegments.length - 1] = fileName;
+                    var typeCode = attributes.map(SftpClient.Attributes::getType).orElse(3);
+                    var type = Document.Type.fromType(typeCode);
+                    var fullPath = path + fileName;
+                    var pathSegments = Arrays.stream(fullPath.split(File.separator))
+                            .filter(s -> !s.isBlank())
+                            .toArray(String[]::new);
+                    var createdTime = attributes
+                            .map(SftpClient.Attributes::getCreateTime)
+                            .map(FileTime::toInstant)
+                            .orElse(null);
+                    var accessTime = attributes
+                            .map(SftpClient.Attributes::getAccessTime)
+                            .map(FileTime::toInstant)
+                            .orElse(null);
+                    var modifyTime = attributes
+                            .map(SftpClient.Attributes::getModifyTime)
+                            .map(FileTime::toInstant)
+                            .orElse(null);
+
                     return Document.builder()
-                            .name(dirEntry.getFilename())
-                            .type(Document.Type.fromType(dirEntry.getAttributes().getType()))
-                            .pathSegments(newPathSegments)
+                            .id(DigestUtils.md5Hex(fullPath))
+                            .name(fileName)
+                            .type(type)
+                            .path(fullPath)
+                            .pathSegments(pathSegments)
+                            .createdTime(createdTime)
+                            .accessTime(accessTime)
+                            .modifyTime(modifyTime)
                             .build();
                 })
                 .collect(Collectors.toList());
